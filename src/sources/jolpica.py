@@ -75,8 +75,12 @@ def get_laps(season: int, rnd: int) -> pd.DataFrame:
         races = data["RaceTable"]["Races"]
         for lap in (races[0]["Laps"] if races else []):
             for t in lap["Timings"]:
+                if "time" not in t:
+                    continue
+                pos = t.get("position")
                 rows.append({"driver": t["driverId"], "lap": int(lap["number"]),
-                             "position": int(t["position"]), "lap_time": _to_seconds(t["time"])})
+                             "position": int(pos) if pos else float("nan"),
+                             "lap_time": _to_seconds(t["time"])})
         offset += PAGE
     return pd.DataFrame(rows)
 

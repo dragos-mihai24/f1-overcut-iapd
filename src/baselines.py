@@ -67,12 +67,22 @@ def main() -> None:
     cfg = load_config()
     d = pd.read_csv(ROOT / cfg["paths"]["processed"] / "duels.csv")
     d = d[d["neutralized"] == 0].reset_index(drop=True)
+    res = pd.concat([evaluate(d, "all duels"),
+                     evaluate(d[d["a_was_ahead"] == 0].reset_index(drop=True), "attacks (A behind B)")])
+    pd.set_option("display.width", 220)
+    print(res.to_string(index=False))
+    out = ROOT / "reports" / "phase1"
+    out.mkdir(parents=True, exist_ok=True)
+    res.to_csv(out / "baselines.csv", index=False)
+
+
+def evaluate(d: pd.DataFrame, subset: str) -> pd.DataFrame:
     X, y = d[PRE_DECISION_NUMERIC], d[TARGET].to_numpy()
     groups = d["season"].astype(str) + "_" + d["round"].astype(str)
     train = d["season"] <= 2023
     test = ~train
-    print(f"green-flag duels: {len(d)}  (train 2018-23: {train.sum()}, test 2024-25: {test.sum()})")
-    print(f"positive rate (undercut success): {y.mean():.3f}\n")
+    print(f"[{subset}] duels: {len(d)}  (train 2018-23: {train.sum()}, test 2024-25: {test.sum()}), "
+          f"positive rate: {y.mean():.3f}")
 
     rows = []
     for name, m in models().items():
@@ -87,16 +97,11 @@ def main() -> None:
         m.fit(Xt, yt)
         ho = scores(y[test], m.predict(X[test].to_numpy()), m.predict_proba(X[test].to_numpy())[:, 1]) \
             if test.sum() else {}
-        row = {"model": name}
-        row.update({f"cv_{k}": f"{cv[k].mean():.3f} ± {cv[k].std():.3f}" for k in cv.columns})
+        row = {"subset": subset, "model": name}
+        row.update({f"cv_{k}": f"{cv[k].mean():.3f} ± {cv[k].std():.3f}" for k in ["accuracy", "roc_auc"]})
         row.update({f"test_{k}": round(v, 3) for k, v in ho.items()})
         rows.append(row)
-    res = pd.DataFrame(rows)
-    pd.set_option("display.width", 200)
-    print(res.to_string(index=False))
-    out = ROOT / "reports" / "phase1"
-    out.mkdir(parents=True, exist_ok=True)
-    res.to_csv(out / "baselines.csv", index=False)
+    return pd.DataFrame(rows)
 
 
 if __name__ == "__main__":

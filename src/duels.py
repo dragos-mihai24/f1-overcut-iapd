@@ -25,6 +25,10 @@ class Race:
     def __init__(self, laps: pd.DataFrame, pits: pd.DataFrame, results: pd.DataFrame,
                  stints: pd.DataFrame | None, neutral_ratio: float):
         laps = laps.sort_values(["driver", "lap"]).copy()
+        # cumulative time is only valid while laps are contiguous: cut each driver at the first gap
+        contiguous = laps["lap"] == laps.groupby("driver").cumcount() + 1
+        self.n_gap_rows = int((~contiguous).sum())
+        laps = laps[contiguous.groupby(laps["driver"]).cummin()]
         laps["t"] = laps.groupby("driver")["lap_time"].cumsum()  # race time at end of lap
         self.laps = laps
         self.T = {(d, l): t for d, l, t in zip(laps["driver"], laps["lap"], laps["t"])}
@@ -137,6 +141,7 @@ def extract_duels(laps, pits, results, stints, cfg) -> tuple[pd.DataFrame, dict]
         "overtakes_per_lap_race": race_overtakes_per_lap(rc),
         "total_laps": rc.total_laps,
         "n_neutral_laps": len(rc.neutral_laps),
+        "n_lap_rows_dropped": rc.n_gap_rows,
         "n_stops_race": sum(len(s) for s in rc.stops.values()),
         "race_wet_tyres": int(any(c in WET_COMPOUNDS for c, _ in rc.tyre.values())) if rc.tyre else np.nan,
     }

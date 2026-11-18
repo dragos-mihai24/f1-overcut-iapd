@@ -1,0 +1,2 @@
+laps,TP,FP,FN,TN,precision,recall,accuracy
+4094,211,59,32,3792,0.781,0.868,0.978
