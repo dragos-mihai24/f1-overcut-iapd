@@ -1,0 +1,14 @@
+seasons: [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
+duel:
+  max_gap_s: 6.0            # max distance between the two drivers before A pits
+  max_lap_delay: 10         # B must pit within this many laps after A
+  min_laps_since_b_stop: 5  # B must not have pitted in the last N laps (else A is responding)
+  pace_window: 3            # laps used for pace delta
+  neutral_ratio: 1.15       # lap is SC/VSC if field median lap > 1.15 x green pace
+traffic:
+  window_ahead_s: 3.0       # cars up to this far ahead of A's rejoin point
+  window_behind_s: 1.0      # cars up to this far behind A's rejoin point
+paths:
+  cache: data/cache
+  interim: data/interim
+  processed: data/processed
