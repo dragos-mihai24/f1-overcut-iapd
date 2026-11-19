@@ -3,6 +3,9 @@
 **Autor:** Mihai Andrei-Dragoș
 **Curs:** Învățare automată și procesarea datelor (IAPD), UPB
 
+> **Status (19.11.2026):** Phase 1 e gata: 5.231 de dueluri, 36 de features, EDA și 5 baseline-uri. Rezultatele sunt în [README](README.md#rezultate-phase-1).
+> **Schimbare față de planul inițial:** FastF1 nu mai poate fi folosit fără abonament F1TV (arhiva `livetiming.formula1.com` răspunde cu HTTP 401). L-am înlocuit cu Jolpica (timpi pe tur, poziții, opriri) și OpenF1 (anvelope din 2023). Perioadele de SC/VSC le deducem din timpii pe tur și le validăm cu mesajele oficiale din OpenF1. Secțiunile de mai jos descriu ce am implementat efectiv.
+
 ## 1. Cerințe (din cursul 00 Overview)
 
 | Fază | Când | Puncte | Ce se cere |
@@ -34,13 +37,12 @@ Păstrăm și `a_was_ahead`, ca să putem separa **atacurile reale** (A în spat
 
 | Sursă | Ce luăm | Cheie de join |
 |---|---|---|
-| **FastF1** (live timing, 2018+) | tururi: `Time`, `LapTime`, `Stint`, `Compound`, `TyreLife`, `PitInTime/PitOutTime`, `TrackStatus`, `Position`; vreme de sesiune: AirTemp, TrackTemp, Humidity, Rainfall, Wind | (an, rundă, pilot, tur) |
-| **Jolpica-F1 API** | calendar, circuite (lat/long), rezultate, pit stops (durata în pit lane), grilă | (an, rundă), `circuitId` |
+| **Jolpica-F1 API** | calendar, circuite (lat/long), rezultate, **timpi pe tur și poziții** (din care calculăm timpii cumulați, gap-urile, ritmul și SC/VSC), pit stops (turul și durata în pit lane) | (an, rundă, pilot, tur), `circuitId` |
+| **OpenF1 API** (2023+) | stints: compusul și vârsta reală a anvelopelor; mesaje race control, folosite pentru validarea detecției SC/VSC | data cursei, numărul mașinii |
 | **Open-Meteo Historical** | vreme orară la coordonatele circuitului, la ora cursei: temperatură, precipitații (inclusiv în orele dinainte, pentru pista udă), nori, vânt | lat/long din Jolpica + data și ora |
 | **Wikipedia** | caracteristici circuite: lungime, nr. viraje, tip (stradal/permanent), sens | `circuitId` → mapare manuală la pagina Wikipedia |
 
-Volum estimat: 8 sezoane × ~22 curse ≈ **173 curse**. La ~6–10 dueluri pe cursă rezultă **~1.000–1.700 rânduri**.
-**Risc:** dacă ieșim sub 1.000, incluzim și cursele sprint (2021+) și/sau facem o analiză de sensibilitate la pragul de 8 s (cu 6 s ca setare principală).
+Volum obținut: **173 de curse**, din care 171 au produs dueluri, adică **5.231 de dueluri** (~30 pe cursă). Riscul de a ieși sub 1.000 de rânduri nu s-a materializat.
 
 ## 4. Features (≥10; țintim ~25)
 
@@ -49,15 +51,15 @@ Le împărțim în două seturi, ca să evităm **data leakage**:
 **A. Pre-decizie** (cunoscute în momentul în care A intră la boxe):
 1. `gap_s`: distanța A–B la finalul turului `L_A−1`
 2. `a_was_ahead`
-3. `tyre_age_A`, `tyre_age_B`, `tyre_age_delta`
-4. `compound_A_old`, `compound_B_old` (ordinal: S < M < H; I, W separat)
-5. `compound_A_new`
+3. `stint_age_A`, `stint_age_B`, `stint_age_delta`: tururi de la ultima oprire (toți anii); din 2023 și vârsta reală a anvelopelor (`tyre_age_*`, OpenF1)
+4. `cmp_A_old`, `cmp_B_old` (ordinal: S < M < H; I, W separat), doar din 2023
+5. `cmp_A_new`, doar din 2023
 6. `pace_delta_3`: diferența de mediană pe ultimele 3 tururi „curate”
 7. `pit_loss_circuit`: pierderea medie la boxe pe circuit (din cursele anterioare, ca să nu folosim informații din cursa curentă)
 8. `traffic_at_exit`: câte mașini cad în fereastra estimată de reintrare a lui A
 9. `laps_remaining`, `race_progress` (= `L_A / total tururi`)
 10. `position_A`, `stop_number_A` (a câta oprire e)
-11. Vreme: `air_temp`, `track_temp`, `humidity`, `rainfall`, `wind_speed` (FastF1) și `precip_prev_3h`, `cloud_cover` (Open-Meteo)
+11. Vreme (Open-Meteo): temperatură, umiditate, precipitații în cursă și în cele 3 ore dinainte, nori, vânt
 12. Circuit: `circuit_length_km`, `n_turns`, `street_circuit` (Wikipedia), plus `overtake_difficulty`, calculat din date ca număr mediu de schimbări de poziție pe tur pe circuit
 13. `season` (schimbările de regulament din 2022 contează)
 
@@ -93,16 +95,17 @@ f1-undercut-prediction/
 ├── config.yaml               # sezoane, prag gap, max lap delay
 ├── src/
 │   ├── sources/
-│   │   ├── fastf1_loader.py
 │   │   ├── jolpica.py
+│   │   ├── openf1.py
 │   │   ├── openmeteo.py
 │   │   └── wikipedia_circuits.py
+│   ├── fetch_raw.py          # descarcă datele brute (cu cache, reluabil)
 │   ├── duels.py              # extragerea duelurilor + etichetare
-│   ├── features.py
-│   └── build_dataset.py      # CLI: rulează tot pipeline-ul
-├── notebooks/
-│   ├── 01_eda.ipynb
-│   └── 02_baselines.ipynb
+│   ├── features.py           # grupurile de features
+│   ├── build_dataset.py      # integrare + features derivate -> duels.csv
+│   ├── eda.py                # analiza exploratorie
+│   ├── baselines.py          # modelele baseline
+│   └── validate_sc.py        # validarea detecției SC/VSC
 ├── data/
 │   ├── cache/                # cache FastF1 (gitignored)
 │   └── processed/duels.csv   # datasetul final (versionat)
@@ -111,12 +114,12 @@ f1-undercut-prediction/
 
 ## 8. Pași pentru Phase 1
 
-1. Setup: mediu Python, `requirements.txt`, repo GitHub public
-2. Clienți de date: Jolpica (calendar + circuite), Open-Meteo, Wikipedia (tabel circuite)
-3. Loader FastF1 cu cache; rulare de test pe o singură cursă (de ex. Bahrain 2024)
-4. Algoritmul de dueluri + etichetare, validat manual pe 2–3 curse cunoscute
-5. Calculul features-urilor + join cu vremea și circuitele
-6. Rulare completă pe 2018–2025 (în fundal, cu cache) → `duels.csv`; verificăm ≥1.000 rânduri
-7. EDA de bază: distribuția clasei, statistici descriptive, valori lipsă, corelații, rata de succes pe circuit și pe compus
-8. Baseline-uri: Dummy, NB, Decision Tree (+ kNN) cu GroupKFold
-9. Slide-uri de status pentru Phase 1 (5–7 slide-uri)
+1. ✅ Setup: mediu Python, `requirements.txt`, repo GitHub public
+2. ✅ Clienți de date: Jolpica, OpenF1, Open-Meteo, Wikipedia
+3. ✅ Descărcarea cu cache (`fetch_raw.py`); test pe Australia 2025 (cursă pe ploaie, cu SC)
+4. ✅ Algoritmul de dueluri + etichetare; detecția SC/VSC validată cu mesajele OpenF1
+5. ✅ Calculul features-urilor + join cu vremea și circuitele
+6. ✅ Rulare completă pe 2018–2025 → `duels.csv` cu 5.231 de rânduri
+7. ✅ EDA de bază: distribuția clasei, statistici descriptive, valori lipsă, corelații, outlieri, rata de succes pe circuit
+8. ✅ Baseline-uri: Dummy, regula „ordinea se păstrează”, NB, Decision Tree, kNN (GroupKFold + test temporal)
+9. ✅ Slide-uri de status pentru Phase 1 (9 slide-uri)

@@ -4,6 +4,35 @@ Proiect IAPD (Învățare automată și procesarea datelor), UPB. Proiect nr. 21
 
 Construim un dataset propriu de **„dueluri de strategie”** din cursele de Formula 1 din sezoanele 2018–2025. Un duel e o pereche de piloți aflați la cel mult 6 s unul de altul, în care unul oprește la boxe înaintea celuilalt. Prezicem dacă pilotul care oprește primul iese în față după ce ambii au oprit (**undercut reușit**) sau dacă cel rămas pe pistă își păstrează sau câștigă avantajul (**overcut**).
 
+## Rezultate Phase 1
+
+- **5.231 de dueluri** din 171 de curse (2018–2025), 31 de circuite și 43 de piloți; 4.342 sunt pe steag verde
+- **36 de features**: 26 pre-decizie (toți anii), 6 de anvelope (2023+), 4 post-hoc (doar pentru analiză)
+- Dataset: [`data/processed/duels.csv`](data/processed/duels.csv); statistici pe cursă: [`data/processed/races.csv`](data/processed/races.csv)
+
+**Observații din EDA:**
+- Contează enorm cine era în față la oprire. Când A **atacă din spate** (2.151 de dueluri), undercut-ul reușește în **37%** din cazuri. Când A e **deja în față**, își păstrează locul în **87%** din cazuri.
+- La atacuri, rata de succes scade puternic cu gap-ul: **78%** sub 1 s, **14%** la 5–6 s. Crește când A e mai rapid în turele dinaintea opririi.
+
+![Volum și echilibrul claselor](reports/phase1/figures/01_volume_and_balance.png)
+![Succesul atacurilor în funcție de features](reports/phase1/figures/02_success_by_feature.png)
+
+**Baseline-uri** (antrenare 2018–2023, test temporal 2024–2025, ROC-AUC; pentru validare: GroupKFold pe cursă, vezi [`reports/phase1/baselines.csv`](reports/phase1/baselines.csv)):
+
+| Model | Toate duelurile | Doar atacuri |
+|---|---|---|
+| Dummy (clasa majoritară) | 0,50 | 0,50 |
+| Regula „ordinea se păstrează” | 0,77 | 0,50 |
+| Gaussian Naïve Bayes | 0,78 | 0,72 |
+| Decision Tree (adâncime 4) | **0,82** | 0,70 |
+| kNN (k = 25) | **0,82** | **0,74** |
+
+Pe toate duelurile, regula simplă „cine e în față rămâne în față” e un baseline puternic. Pe atacuri, regula nu mai ajută, dar modelele găsesc semnal real. Phase 2 se concentrează pe atacuri.
+
+**Validarea detecției SC/VSC** față de mesajele oficiale de race control din OpenF1, pe 4.094 de tururi din 2023–2025: precizie 0,78, recall 0,87, acuratețe 0,98 ([`reports/phase1/sc_detector_validation.csv`](reports/phase1/sc_detector_validation.csv)).
+
+Alte figuri (rata de succes pe circuite, valori lipsă, corelații, outlieri la timpii în pit lane) sunt în [`reports/phase1/figures/`](reports/phase1/figures/), iar statisticile descriptive în [`reports/phase1/descriptive_stats.csv`](reports/phase1/descriptive_stats.csv).
+
 ## Surse de date
 
 | Sursă | Ce folosim |
@@ -50,6 +79,7 @@ python -m src.fetch_raw              # descarcă datele brute (lent: ~5 h din ca
 python -m src.build_dataset          # -> data/processed/duels.csv, races.csv
 python -m src.eda                    # -> reports/phase1/figures, descriptive_stats.csv
 python -m src.baselines              # -> reports/phase1/baselines.csv
+python -m src.validate_sc            # -> reports/phase1/sc_detector_validation.csv
 ```
 
 `python -m src.build_dataset --offline` construiește datasetul doar din cursele deja descărcate.
